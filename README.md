@@ -2,7 +2,7 @@
 
 依据《模拟交易自助发货网站详细开发文档》实现的数字商品交易与兑换系统。使用 **Java 21 / Spring Boot 3 / MyBatis-Plus / MySQL 8 / Redis / Vue 3 / Vite / Element Plus**，全程仅模拟支付。
 
-仓库：[xiaowork-dev/Automated-Delivery](https://github.com/xiaowork-dev/Automated-Delivery)。实施顺序、接口契约见 [docs/implementation-plan.md](docs/implementation-plan.md)。最终运行验收以 [docs/acceptance.md](docs/acceptance.md) 的实际结果为准；提供配置与脚本不代表已经完成公网部署。
+仓库：[xiaowork-dev/Automated-Delivery](https://github.com/xiaowork-dev/Automated-Delivery)。实施顺序、接口契约见 [docs/implementation-plan.md](docs/implementation-plan.md)。运行验收见 [V1.0.0 业务与容器验收](docs/acceptance.md) 和 [V1.0.1 远程安装验收](docs/installer-acceptance.md)；提供配置与脚本不代表已经完成公网部署。
 
 ## 已实现的业务
 
@@ -15,7 +15,29 @@
 - Redis 商品缓存和限流；Redis 不可用时库存与支付一致性仍由 MySQL 保证。
 - Docker Compose、Nginx history 路由与 API 代理、HTTPS、健康检查、升级前备份和恢复。
 
-## 一键启动
+## Linux 一条命令安装和更新
+
+在 Linux 服务器运行：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/xiaowork-dev/Automated-Delivery/main/install.sh | sudo bash
+```
+
+首次执行会准备 Git / Docker / Compose、克隆本仓库到 `/opt/Automated-Delivery`、生成私密配置并构建启动网站。以后 GitHub 的 `main` 推送新版后，**再次执行完全相同的命令**，即可拉取代码、备份数据库、重建镜像并更新服务；不需要手工进入目录执行 git pull。已经安装的 Docker 不会被重复安装。
+
+安装器保留 `.env`、管理员密码、证书、备份和数据库卷。已有完整证书或成功部署状态记录为 HTTPS 时，更新会继续启用 HTTPS。执行失败不会写入成功部署记录；原成功版本记录保存在安装目录 `.deployment-state`。该文件只记录提交、版本、模式和时间，不保存密钥。失败后按输出排查并重跑；Git 工作目录可能已更新，成功记录标记最后一次健康部署。
+
+默认跟踪 `main`。已有仓库的本地代码改动、不同来源仓库或分叉历史会使更新停止，脚本不会强制覆盖。此命令是手动触发更新入口；GitHub 推送代码后，需要在服务器再运行一次。
+
+自定义目录或明确使用已有证书：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/xiaowork-dev/Automated-Delivery/main/install.sh | sudo bash -s -- --dir /opt/Automated-Delivery --https
+```
+
+HTTPS 首次签发仍需已解析到服务器的域名，安装后按“Linux 公网 HTTPS”一节的 `enable-https.sh` 申请；以后更新无需重复提供域名。服务器须允许访问 GitHub 和容器镜像仓库，网站默认使用 80 / 443 端口。
+
+## 已有源码的一键启动
 
 安装 Docker Engine + Compose v2（Linux），或 Docker Desktop（Windows，Linux 容器模式）。在项目根目录执行：
 
@@ -131,7 +153,7 @@ npm run test:e2e
 
 `TEST_WEB_URL` 应指向实际页面入口，例如本地 Vite 的 `http://127.0.0.1:5173` 或 Compose 的 `http://127.0.0.1:8088`。Windows 可设置 `BROWSER_CHANNEL=msedge` 使用已安装的 Edge；不设置时使用 Playwright Chromium。脚本验证买家与管理员流程和移动端页面，结果与截图写入 `artifacts/browser/`。它会创建测试记录，仍应使用专门测试库。
 
-GitHub Actions 将运行后端测试、真实 MySQL HTTP 验收、前端构建、Docker Compose 启动、Nginx 路由、浏览器交易流程、备份恢复及 TLS 配置检查。TLS 检查使用仅 CI 的自签证书，公网可信证书的签发必须另外在目标服务器验证。CI 的结果以仓库 Actions 实际状态为准。
+GitHub Actions 将运行安装器首装/升级隔离回归、远程 curl 安装、重复安装、HTTPS 自动延续、后端测试、真实 MySQL HTTP 验收、前端构建、Nginx 路由、浏览器交易流程及备份恢复。TLS 检查使用仅 CI 的自签证书，公网可信证书的签发必须另外在目标服务器验证。CI 的结果以仓库 Actions 实际状态为准。
 
 ## 备份与恢复
 
@@ -161,7 +183,7 @@ powershell -ExecutionPolicy Bypass -File scripts/release.ps1 -Version 1.0.1 -Mes
 
 需要本机 Git 已登录并对 `origin` 有写权限，以及 Java / Maven / Node / Python。提供 `TEST_BASE_URL` 时还会执行真实部署的 API 验收；正式发布前应在独立测试库完成这项验收。测试失败不会提交或推送，已修改的版本元数据会保留供修复。推送失败时本地提交和标签保留，应排查认证 / 网络后重试 `git push --atomic origin HEAD v1.0.1`；不要重复执行同版本发布脚本。
 
-版本提交与部署分开：先确认 CI 验收，再在服务器 `git pull --ff-only` 后运行 `bash scripts/deploy.sh --https`。已有 HTTPS 站点升级要继续带 `--https`，以使用证书配置。
+版本提交与部署分开：先确认 CI 验收，再在服务器执行上面的 curl 安装命令即可拉取并更新；安装器自动延续已有 HTTPS。手工维护的源码部署也可 `git pull --ff-only` 后运行 `bash scripts/deploy.sh --https`。
 
 ## 日常排查
 

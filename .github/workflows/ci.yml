@@ -101,8 +101,15 @@ jobs:
           npm ci
           npm run build
 
+  installer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Isolated installer and upgrade regression
+        run: bash scripts/test-install.sh
+
   deployment:
-    needs: [backend, frontend]
+    needs: [backend, frontend, installer]
     runs-on: ubuntu-latest
     env:
       HTTP_PORT: '8088'
@@ -127,10 +134,34 @@ jobs:
           echo "::add-mask::$admin_secret"
           echo "::add-mask::$jwt_secret"
           printf 'ADMIN_PASSWORD=%s\nJWT_SECRET=%s\n' "$admin_secret" "$jwt_secret" >> "$GITHUB_ENV"
-      - name: One-command deployment and HTTP transaction
+      - name: Remote one-command installation
         shell: bash
         run: |
-          bash scripts/deploy.sh
+          install_dir="$RUNNER_TEMP/automated-delivery-ci"
+          source_repo="$RUNNER_TEMP/automated-delivery-source.git"
+          git clone --bare "$GITHUB_WORKSPACE" "$source_repo"
+          git --git-dir="$source_repo" update-ref refs/heads/main "$GITHUB_SHA"
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/automated-delivery-ci.gitconfig"
+          git config --file "$GIT_CONFIG_GLOBAL" url."file://$source_repo".insteadOf https://github.com/xiaowork-dev/Automated-Delivery.git
+          git config --file "$GIT_CONFIG_GLOBAL" --add safe.directory "$source_repo"
+          printf 'AD_INSTALL_DIR=%s\nGIT_CONFIG_GLOBAL=%s\n' "$install_dir" "$GIT_CONFIG_GLOBAL" >> "$GITHUB_ENV"
+          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
+            curl -fsSL --retry 3 "https://raw.githubusercontent.com/xiaowork-dev/Automated-Delivery/$GITHUB_SHA/install.sh" |
+              sudo -E bash -s -- --dir "$install_dir"
+          else
+            sudo -E bash install.sh --dir "$install_dir"
+          fi
+          test "$install_dir" = "$RUNNER_TEMP/automated-delivery-ci"
+          sudo chown -R "$(id -u):$(id -g)" "$install_dir"
+          lock_file="$RUNNER_TEMP/.automated-delivery-ci.install.lock"
+          if [[ -f "$lock_file" && ! -L "$lock_file" ]]; then
+            sudo chown "$(id -u):$(id -g)" "$lock_file"
+          fi
+      - name: Repeat installation and HTTP transaction
+        shell: bash
+        run: |
+          bash "$GITHUB_WORKSPACE/install.sh" --dir "$AD_INSTALL_DIR" --no-deps
+          cd "$AD_INSTALL_DIR"
           curl -fsS http://localhost:8088/orders > /dev/null
           python scripts/api-acceptance.py
           bash scripts/backup.sh
@@ -139,6 +170,7 @@ jobs:
       - name: Browser acceptance against deployed frontend and API
         shell: bash
         run: |
+          cd "$AD_INSTALL_DIR"
           npm ci --prefix frontend
           cd frontend
           npx playwright install --with-deps chromium
@@ -147,23 +179,27 @@ jobs:
       - name: Test TLS configuration with a local CI certificate
         shell: bash
         run: |
+          cd "$AD_INSTALL_DIR"
           umask 077
           openssl req -x509 -nodes -newkey rsa:2048 -days 1 -subj '/CN=localhost' \
             -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' \
             -keyout deploy/certs/privkey.pem -out deploy/certs/fullchain.pem > /dev/null 2>&1
           bash scripts/deploy.sh --https
+          bash "$GITHUB_WORKSPACE/install.sh" --dir "$AD_INSTALL_DIR" --no-deps
           curl -fsS --cacert deploy/certs/fullchain.pem https://localhost:8443/orders > /dev/null
           code="$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8088/orders)"
           test "$code" = 301
       - name: Redis outage falls back to MySQL
         shell: bash
         run: |
+          cd "$AD_INSTALL_DIR"
           docker compose stop redis
           SSL_CERT_FILE="$PWD/deploy/certs/fullchain.pem" TEST_BASE_URL=https://localhost:8443 python scripts/api-acceptance.py
           docker compose start redis
       - name: Disposable CI backup restore exercise
         shell: bash
         run: |
+          cd "$AD_INSTALL_DIR"
           backup_file="$(find backups -maxdepth 1 -name 'database-*.sql.gz' -type f | sort | tail -1)"
           test -n "$backup_file"
           bash scripts/restore.sh "$backup_file" --confirm
@@ -173,12 +209,13 @@ jobs:
         with:
           name: compose-validation
           path: |
-            artifacts/api-acceptance.json
-            artifacts/browser/report.json
-            artifacts/browser/*.png
+            ${{ env.AD_INSTALL_DIR }}/artifacts/api-acceptance.json
+            ${{ env.AD_INSTALL_DIR }}/artifacts/browser/report.json
+            ${{ env.AD_INSTALL_DIR }}/artifacts/browser/*.png
       - name: Stop disposable CI services
         if: always()
         run: |
-          if test -f .env; then
+          if [[ -n "${AD_INSTALL_DIR:-}" && -f "$AD_INSTALL_DIR/.env" ]]; then
+            cd "$AD_INSTALL_DIR"
             docker compose --env-file .env -f docker-compose.yml -f deploy/docker-compose.https.yml down
           fi

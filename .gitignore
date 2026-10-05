@@ -22,3 +22,6 @@ __pycache__/
 deploy/letsencrypt/
 deploy/acme/*
 !deploy/acme/.gitkeep
+
+.deployment-state
+.deployment-state.*

@@ -6,7 +6,7 @@
 
 - 每次版本更新后，完成相应构建、测试和变更说明，执行 Git commit 并 push 到 `https://github.com/xiaowork-dev/Automated-Delivery`。用户已经授权此流程，无需每次重复询问。
 - 一次提交聚焦一项已完成的功能或修复。不能 force push，也不能重写已有历史。
-- 维护一键部署脚本与说明，确保升级前备份、数据卷持久化、前端路由刷新正常、生产 HTTPS 配置可用。
+- 维护根目录 `install.sh`，支持 `curl -fsSL https://raw.githubusercontent.com/xiaowork-dev/Automated-Delivery/main/install.sh | sudo bash` 首装；同命令拉取 main 新版并更新，保留配置、数据和 HTTPS。维护部署脚本与说明，确保升级前备份、数据卷持久化和前端路由刷新正常。
 - 未实际验证的事项必须明确记录，不能把静态审查视为真实部署或验收通过。
 
 ## 实现与验证
