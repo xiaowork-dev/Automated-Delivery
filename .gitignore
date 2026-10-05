@@ -15,3 +15,10 @@ backups/
 Thumbs.db
 docs/source-requirements.txt
 artifacts/
+deploy/certs/*
+!deploy/certs/README.md
+__pycache__/
+*.pyc
+deploy/letsencrypt/
+deploy/acme/*
+!deploy/acme/.gitkeep

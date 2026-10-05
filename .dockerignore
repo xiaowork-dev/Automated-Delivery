@@ -1,0 +1,13 @@
+.git
+.env
+.env.*
+!.env.example
+**/node_modules
+**/target
+**/dist
+**/.runtime
+backups
+logs
+deploy/certs/*.pem
+deploy/certs/*.key
+deploy/certs/*.crt

@@ -1,0 +1,184 @@
+name: Build and acceptance
+
+on:
+  push:
+    branches: [main, develop]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_DATABASE: auto_delivery_test
+          MYSQL_USER: autodelivery
+          MYSQL_PASSWORD: ci_database_password
+          MYSQL_ROOT_PASSWORD: ci_root_password
+          MYSQL_ROOT_HOST: '%'
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval=10s --health-timeout=5s --health-retries=30
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: '3306'
+      DB_NAME: auto_delivery_test
+      DB_USER: autodelivery
+      DB_PASSWORD: ci_database_password
+      ADMIN_USERNAME: ci_admin
+      REDIS_ENABLED: 'false'
+      APP_SEED_DEMO: 'false'
+      TEST_BASE_URL: http://127.0.0.1:8080
+      TEST_MYSQL_URL: jdbc:mysql://127.0.0.1:3306/auto_delivery_test?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+      # Privileged account is used only for disposable trigger rollback tests.
+      TEST_MYSQL_USER: root
+      TEST_MYSQL_PASSWORD: ci_root_password
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Generate ephemeral authentication secrets
+        shell: bash
+        run: |
+          admin_secret="$(openssl rand -hex 32)"
+          jwt_secret="$(openssl rand -hex 32)"
+          echo "::add-mask::$admin_secret"
+          echo "::add-mask::$jwt_secret"
+          printf 'ADMIN_PASSWORD=%s\nJWT_SECRET=%s\n' "$admin_secret" "$jwt_secret" >> "$GITHUB_ENV"
+      - name: Backend build and transactional tests
+        working-directory: backend
+        run: mvn -B verify
+      - name: Real MySQL HTTP acceptance
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          java -jar backend/target/*.jar > artifacts/backend-ci.log 2>&1 &
+          application_pid=$!
+          trap 'kill "$application_pid" 2>/dev/null || true' EXIT
+          healthy=false
+          for attempt in {1..90}; do
+            if curl -fsS "$TEST_BASE_URL/actuator/health" > /dev/null; then healthy=true; break; fi
+            sleep 2
+          done
+          if [[ "$healthy" != true ]]; then echo 'Backend health check timed out'; exit 1; fi
+          python scripts/api-acceptance.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-validation
+          path: |
+            backend/target/surefire-reports
+            artifacts/api-acceptance.json
+            artifacts/backend-ci.log
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Frontend production build
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+  deployment:
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    env:
+      HTTP_PORT: '8088'
+      HTTPS_PORT: '8443'
+      ADMIN_USERNAME: ci_admin
+      TEST_BASE_URL: http://127.0.0.1:8088
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Generate ephemeral secrets
+        shell: bash
+        run: |
+          admin_secret="$(openssl rand -hex 32)"
+          jwt_secret="$(openssl rand -hex 32)"
+          echo "::add-mask::$admin_secret"
+          echo "::add-mask::$jwt_secret"
+          printf 'ADMIN_PASSWORD=%s\nJWT_SECRET=%s\n' "$admin_secret" "$jwt_secret" >> "$GITHUB_ENV"
+      - name: One-command deployment and HTTP transaction
+        shell: bash
+        run: |
+          bash scripts/deploy.sh
+          curl -fsS http://localhost:8088/orders > /dev/null
+          python scripts/api-acceptance.py
+          bash scripts/backup.sh
+          gzip -t backups/database-*.sql.gz
+          (cd backups && sha256sum --check database-*.sql.gz.sha256)
+      - name: Browser acceptance against deployed frontend and API
+        shell: bash
+        run: |
+          npm ci --prefix frontend
+          cd frontend
+          npx playwright install --with-deps chromium
+          cd ..
+          TEST_WEB_URL=http://127.0.0.1:8088 node scripts/browser-acceptance.cjs
+      - name: Test TLS configuration with a local CI certificate
+        shell: bash
+        run: |
+          umask 077
+          openssl req -x509 -nodes -newkey rsa:2048 -days 1 -subj '/CN=localhost' \
+            -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' \
+            -keyout deploy/certs/privkey.pem -out deploy/certs/fullchain.pem > /dev/null 2>&1
+          bash scripts/deploy.sh --https
+          curl -fsS --cacert deploy/certs/fullchain.pem https://localhost:8443/orders > /dev/null
+          code="$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8088/orders)"
+          test "$code" = 301
+      - name: Redis outage falls back to MySQL
+        shell: bash
+        run: |
+          docker compose stop redis
+          SSL_CERT_FILE="$PWD/deploy/certs/fullchain.pem" TEST_BASE_URL=https://localhost:8443 python scripts/api-acceptance.py
+          docker compose start redis
+      - name: Disposable CI backup restore exercise
+        shell: bash
+        run: |
+          backup_file="$(find backups -maxdepth 1 -name 'database-*.sql.gz' -type f | sort | tail -1)"
+          test -n "$backup_file"
+          bash scripts/restore.sh "$backup_file" --confirm
+          SSL_CERT_FILE="$PWD/deploy/certs/fullchain.pem" TEST_BASE_URL=https://localhost:8443 python scripts/api-acceptance.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: compose-validation
+          path: |
+            artifacts/api-acceptance.json
+            artifacts/browser/report.json
+            artifacts/browser/*.png
+      - name: Stop disposable CI services
+        if: always()
+        run: |
+          if test -f .env; then
+            docker compose --env-file .env -f docker-compose.yml -f deploy/docker-compose.https.yml down
+          fi
