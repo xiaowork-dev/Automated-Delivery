@@ -21,6 +21,22 @@ curl -fsSL https://raw.githubusercontent.com/xiaowork-dev/Automated-Delivery/mai
 
 首轮 CI 的远程首次安装和全部容器健康检查通过；重复运行测试因 sudo 保留 runner HOME 导致 Docker 缓存锁文件归 root 所有而退出。CI 已改为独立 root Docker 缓存目录及明确环境变量列表，应用安装脚本未变。
 
-待修正后的 CI 完成后在此补充：远程首装、重复安装、HTTPS 后自动更新、真实 HTTP/浏览器、Redis 降级和备份恢复的结果。依赖安装代码使用 Docker 官方签名 apt/RPM 仓库；CI 的 Docker 已准备好，尚未在每种空白发行版上实际安装 Engine。
+[最终 CI 37322815204](https://github.com/xiaowork-dev/Automated-Delivery/actions/runs/37322815204) 对提交 `4c52e91d16e03b842f45e18a253a0af594bb8813` 验收成功，四个任务 installer / backend / frontend / deployment 全部通过。后续仅补充本验收文档，不改变已验证的安装、应用和工作流代码。
+
+| 项目 | 实际结果 |
+| --- | --- |
+| 隔离安装回归 | 16 项通过；真实 Git 快进与冲突保护；Linux 实际 flock 锁 |
+| 后端与前端 | 真实 MySQL 全部 13 项后端测试通过；API 验收及前端生产构建通过 |
+| 远程一条命令首装 | 实际下载已提交的 raw install.sh，经 sudo 安装；四个容器健康，成功记录 V1.0.1 / HTTPS=false |
+| 再次执行更新入口 | 同源 Git 更新、重建、备份及健康检查通过；成功状态记录更新 |
+| HTTP 交易 | 42 项 / 139 次请求通过；中位数 26.27ms、P95 156.38ms |
+| 浏览器 | 16 项买家、后台、移动端验收通过，无 JavaScript 运行错误 |
+| HTTPS 自动延续 | 创建 CI 自签证书并开启 TLS 后，不传 --https 再次运行安装器，成功记录 HTTPS=true；HTTPS 页面和 HTTP 301 验证通过 |
+| Redis 停机降级 | HTTPS 下 42 项 / 139 次请求通过；P95 598.97ms |
+| 备份与恢复 | gzip / SHA256 校验、停机恢复、健康启动通过；HTTPS 下再次完成 42 项 / 139 次请求，P95 217.22ms |
+
+主分支 raw 安装入口已实际下载得到 HTTP 200，并验证 Git blob 与提交一致。CI 上传了测试报告和浏览器截图，没有上传环境文件、私钥或数据库备份。
+
+依赖安装代码使用 Docker 官方签名 apt/RPM 仓库；CI 的 Docker 已准备好，尚未在每种空白发行版上实际安装 Engine。
 
 目标公网服务器与真实域名仍未提供；公网访问、可信证书签发及目标服务器重启恢复沿用 V1.0.0 的待验收项。
