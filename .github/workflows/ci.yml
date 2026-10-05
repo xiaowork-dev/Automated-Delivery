@@ -145,11 +145,13 @@ jobs:
           git config --file "$GIT_CONFIG_GLOBAL" url."file://$source_repo".insteadOf https://github.com/xiaowork-dev/Automated-Delivery.git
           git config --file "$GIT_CONFIG_GLOBAL" --add safe.directory "$source_repo"
           printf 'AD_INSTALL_DIR=%s\nGIT_CONFIG_GLOBAL=%s\n' "$install_dir" "$GIT_CONFIG_GLOBAL" >> "$GITHUB_ENV"
+          root_docker_config="$RUNNER_TEMP/automated-delivery-root-docker"
+          preserved_env='GIT_CONFIG_GLOBAL,HTTP_PORT,HTTPS_PORT,ADMIN_USERNAME,ADMIN_PASSWORD,JWT_SECRET'
           if [[ "$GITHUB_EVENT_NAME" == push ]]; then
             curl -fsSL --retry 3 "https://raw.githubusercontent.com/xiaowork-dev/Automated-Delivery/$GITHUB_SHA/install.sh" |
-              sudo -E bash -s -- --dir "$install_dir"
+              sudo --preserve-env="$preserved_env" env DOCKER_CONFIG="$root_docker_config" bash -s -- --dir "$install_dir"
           else
-            sudo -E bash install.sh --dir "$install_dir"
+            sudo --preserve-env="$preserved_env" env DOCKER_CONFIG="$root_docker_config" bash install.sh --dir "$install_dir"
           fi
           test "$install_dir" = "$RUNNER_TEMP/automated-delivery-ci"
           sudo chown -R "$(id -u):$(id -g)" "$install_dir"
