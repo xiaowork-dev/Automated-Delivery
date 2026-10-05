@@ -1,0 +1,59 @@
+server:
+  port: ${SERVER_PORT:8080}
+  error:
+    include-message: never
+  shutdown: graceful
+spring:
+  application:
+    name: automated-delivery
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:automated_delivery}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: ${DB_USER:delivery}
+    password: ${DB_PASSWORD:}
+    hikari:
+      maximum-pool-size: 20
+      connection-timeout: 5000
+  flyway:
+    enabled: true
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      connect-timeout: 300ms
+      timeout: 300ms
+  jackson:
+    time-zone: Asia/Shanghai
+  mvc:
+    problemdetails:
+      enabled: false
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+  health:
+    redis:
+      enabled: false
+app:
+  jwt-secret: ${JWT_SECRET:}
+  jwt-hours: 12
+  admin-username: ${ADMIN_USERNAME:admin}
+  admin-password: ${ADMIN_PASSWORD:}
+  seed-demo: ${APP_SEED_DEMO:false}
+  redis-enabled: ${REDIS_ENABLED:false}
+  order-expiry-minutes: ${ORDER_EXPIRY_MINUTES:30}
+  scheduler-enabled: ${SCHEDULER_ENABLED:true}
+logging:
+  file:
+    name: ${LOG_PATH:logs}/application.log
+  logback:
+    rollingpolicy:
+      max-history: 14
+      max-file-size: 20MB
