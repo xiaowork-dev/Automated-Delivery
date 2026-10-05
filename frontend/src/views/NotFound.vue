@@ -1,0 +1,1 @@
+<template><div class="state-panel not-found"><div class="eyebrow">404 / PAGE NOT FOUND</div><h1>这个页面走丢了。</h1><p>请检查地址，或返回商店继续浏览。</p><RouterLink to="/" class="solid-link">返回商品商店 →</RouterLink></div></template>
