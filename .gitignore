@@ -1,0 +1,17 @@
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+target/
+.idea/
+.vscode/
+*.log
+logs/
+backups/
+*.sql.gz
+.runtime/
+.DS_Store
+Thumbs.db
+docs/source-requirements.txt
+artifacts/
