@@ -83,8 +83,10 @@ async function main() {
     for (const route of ['products', 'codes', 'orders', 'users', 'logs']) {
       await admin.goto(base + '/admin/' + route);
       await admin.locator('.admin-table-panel').waitFor();
-      await admin.waitForFunction(() => !document.querySelector('.el-loading-mask'));
-      assert(!(await admin.getByText('服务暂时无法连接', { exact: false }).count()));
+      await admin.locator('.admin-table-panel .loading-panel').waitFor({ state: 'hidden' });
+      assert.equal(await admin.locator('.admin-table-panel .state-panel').count(), 0,
+        'Admin ' + route + ' must load without an error state');
+      await admin.locator('.admin-table-panel .el-table__row').first().waitFor();
       pass('admin ' + route + ' renders');
     }
     await admin.goto(base + '/admin/products');
