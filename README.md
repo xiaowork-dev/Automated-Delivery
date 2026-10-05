@@ -71,7 +71,7 @@ HTTPS 模式 HTTP 自动 301 跳转，`/api/` 只经 HTTPS 对外服务。`/heal
 | 变量 | 用途 |
 | --- | --- |
 | `DB_NAME` / `DB_USER` / `DB_PASSWORD` | MySQL 业务库、业务账号与密码 |
-| `DB_ROOT_PASSWORD` | 数据库初始化与内部健康检查 |
+| `DB_ROOT_PASSWORD` | 数据库首次初始化的管理员密码 |
 | `JWT_SECRET` | 至少 32 字符的随机签名密钥 |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 首次创建管理员，密码至少 8 字符 |
 | `APP_SEED_DEMO` | 首次生成演示商品，生产默认 `false` |

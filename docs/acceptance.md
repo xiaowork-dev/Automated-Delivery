@@ -9,13 +9,13 @@
 | 后端服务、权限及 Redis 单元测试 | 9 项通过 |
 | 真实 MySQL 8.0.45 服务集成测试 | 4 项通过：20 轮单库存五订单竞争、20 单竞争 10 条库存、同单 20 并发重试、数据库故障完整回滚 |
 | 真实 MySQL HTTP 验收 | 42 项通过、139 次请求；含注册、权限、快照、导入、支付、兑换、作废、禁用账号、密码变更和 50 并发商品请求 |
-| 浏览器交易与后台 | Edge 实际运行 16 项通过；桌面与 390px 手机布局检查通过；无 JavaScript 运行错误 |
+| 浏览器交易与后台 | Edge 实际运行 16 项通过；桌面与 390px 手机布局检查通过；后台等待请求完成并确认真实数据行；无 JavaScript 运行错误 |
 | 超时与过期任务 | 实际修改独立测试记录有效期，订单转为 EXPIRED、过期支付拒绝、卡密转为 EXPIRED、可用库存排除过期卡密 |
 | 统一错误响应 | 已实际验证 401、403、404、405、409，以及业务错误码 |
 | 前端生产构建 | Vite 6.4.3 构建通过；npm audit 无漏洞 |
 | 部署脚本 | Bash、PowerShell、Python 语法与 YAML 解析通过；版本同步在隔离副本验证通过 |
 
-HTTP 本次测量中位数为 32.55ms，P95 为 101.14ms，统计范围为本机本轮 139 次请求。原始报告保存在本地 `artifacts/api-acceptance.json`、`artifacts/browser/report.json`，不提交临时测试账号、兑换码和截图。
+本地 HTTP 测量中位数为 32.55ms，P95 为 101.14ms，统计范围为本机本轮 139 次请求。原始报告保存在本地 `artifacts/api-acceptance.json`、`artifacts/browser/report.json`，不提交临时测试账号、兑换码和截图。
 
 ## 修复与确认
 
@@ -23,12 +23,30 @@ HTTP 本次测量中位数为 32.55ms，P95 为 101.14ms，统计范围为本机
 
 兑换码通过前端内存草稿传递，不进入 URL，避免出现在浏览器历史、Referer 和 Nginx 访问日志。修改密码后旧 JWT 失效，禁用用户后旧令牌被拒绝。数据库触发器故障测试证明卡密、订单支付时间、状态和发货日志一起回滚，移除故障后原订单可以重试成功。
 
-## Docker 与上线验收
+首次容器验收发现 MySQL 初始化临时服务使 socket 健康检查提前成功，紧接的备份无法连接。健康检查现使用业务账号通过 TCP 查询业务库，Linux 与 PowerShell 的备份和恢复也显式使用 TCP。修复后两轮完整 Linux CI 均通过。
 
-本机没有 Docker，容器启动、Nginx 路由、TLS 配置、Redis 故障降级和备份恢复交由 GitHub Actions 的独立 Linux 环境执行。CI 运行结果将在完成后补充到此文件。[Actions](https://github.com/xiaowork-dev/Automated-Delivery/actions)
+## GitHub Linux 容器验收
 
-公网 Linux 服务器、真实域名、可信证书签发与外网访问尚未提供验收环境，因此仍是未完成的上线验收项。已提供 `scripts/enable-https.sh`、`scripts/deploy.sh` 和对应 PowerShell 部署入口；取得服务器与域名后可以继续执行这部分。
+[最终 CI 运行 37314993292](https://github.com/xiaowork-dev/Automated-Delivery/actions/runs/37314993292) 对应用与脚本提交 `4f9921d73acac9b652c5da95274ccae0a2f74dda` 的三个任务全部成功：backend、frontend、deployment。验收文档的后续提交不改变该轮验证的应用与部署脚本。
+
+| 项目 | 实际结果 |
+| --- | --- |
+| 后端构建与真实 MySQL 回归 | 13 项测试通过；真实数据库 HTTP 验收通过 |
+| 前端构建 | npm ci 与生产构建通过 |
+| 一键部署 | 实际执行 `bash scripts/deploy.sh`，构建并启动 MySQL / Redis / API / Nginx，健康检查通过 |
+| Nginx 路由与容器 HTTP 交易 | `/orders` 刷新可访问；42 项验收、139 次请求通过；中位数 26.02ms、P95 132.68ms |
+| 浏览器验收 | Linux Chromium 实际运行 16 项通过，包含买家支付兑换、后台真实数据、移动端及运行错误检查 |
+| TLS 配置 | 实际执行 HTTPS 部署，使用 CI 自签证书验证 HTTPS 页面及 HTTP 301 跳转 |
+| Redis 故障降级 | 停止 Redis 后通过 HTTPS 执行 42 项、139 次请求，交易仍成功；中位数 58.82ms、P95 600.25ms |
+| 数据库备份 | 实际 mysqldump、gzip 完整性及 SHA256 校验通过 |
+| 数据库恢复 | 先备份当前库、停止业务服务、导入备份、重新启动原容器；健康检查通过，HTTPS 下再次完成 42 项、139 次请求；P95 238.56ms |
+
+CI 上传了后端测试报告、HTTP 报告和浏览器报告/截图，可在上述运行页下载；未上传环境配置、证书私钥或数据库备份。Windows 部署入口目前完成语法和配置审查，容器运行证据来自 Linux CI。
+
+## 尚需目标服务器完成的上线验收
+
+公网 Linux 服务器、真实域名尚未提供，因此公网访问、可信证书签发及目标服务器重启后的恢复仍未完成。CI 自签证书仅证明 TLS 配置可运行。已提供 `scripts/enable-https.sh`、`scripts/deploy.sh` 和对应 PowerShell 部署入口；取得服务器连接方式与域名后可以继续执行公网验收。
 
 ## Git 与后续更新
 
-设计、后端、前端和部署按阶段独立提交到用户指定仓库。`AGENTS.md` 保留每次版本更新后测试、提交并推送的用户要求；`scripts/release.sh` / `scripts/release.ps1` 同步版本号、测试、检查敏感文件、提交并原子推送分支和标签。
+设计、后端、前端、部署和验收修复按阶段独立提交到用户指定仓库。`AGENTS.md` 保留每次版本更新后测试、提交并推送的用户要求；`scripts/release.sh` / `scripts/release.ps1` 同步版本号、测试、检查敏感文件、提交并原子推送分支和标签。
