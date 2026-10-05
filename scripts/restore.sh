@@ -15,7 +15,7 @@ compose up -d --wait --wait-timeout 240 mysql
 bash "$PROJECT_ROOT/scripts/backup.sh"
 compose stop frontend backend
 trap 'printf "%s\n" "恢复未完成时请保留停机状态，检查错误并用升级前备份重试。" >&2' ERR
-gzip -dc "$RESTORE_FILE" | compose exec -T mysql sh -c 'MYSQL_PWD="$MYSQL_PASSWORD" exec mysql --user="$MYSQL_USER" --default-character-set=utf8mb4 "$MYSQL_DATABASE"'
+gzip -dc "$RESTORE_FILE" | compose exec -T mysql sh -c 'MYSQL_PWD="$MYSQL_PASSWORD" exec mysql --protocol=TCP --host=127.0.0.1 --port=3306 --user="$MYSQL_USER" --default-character-set=utf8mb4 "$MYSQL_DATABASE"'
 # Preserve HTTPS configuration if the currently created frontend container uses it.
 compose start backend frontend
 for (( attempt = 1; attempt <= 60; attempt++ )); do

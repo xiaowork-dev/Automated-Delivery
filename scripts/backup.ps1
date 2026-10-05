@@ -15,7 +15,7 @@ $temporaryFile = "$backupFile.partial"
 $containerFile = "/tmp/$baseName"
 try {
     # docker cp preserves bytes: PowerShell 5.1 native stdout redirection can corrupt UTF-8 SQL.
-    $command = 'umask 077; MYSQL_PWD="$MYSQL_PASSWORD" mysqldump --user="$MYSQL_USER" --single-transaction --no-tablespaces --default-character-set=utf8mb4 "$MYSQL_DATABASE" > ' + $containerFile
+    $command = 'umask 077; MYSQL_PWD="$MYSQL_PASSWORD" mysqldump --protocol=TCP --host=127.0.0.1 --port=3306 --user="$MYSQL_USER" --single-transaction --no-tablespaces --default-character-set=utf8mb4 "$MYSQL_DATABASE" > ' + $containerFile
     Invoke-Compose exec -T mysql sh -c $command
     & docker cp "${container}:$containerFile" $plainFile
     if ($LASTEXITCODE -ne 0) { throw '无法复制数据库备份。' }

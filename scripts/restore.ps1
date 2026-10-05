@@ -32,7 +32,7 @@ try {
     Invoke-Compose stop frontend backend
     & docker cp $plainFile "${container}:$containerFile"
     if ($LASTEXITCODE -ne 0) { throw '无法复制待恢复的 SQL，服务保持停止。' }
-    $command = 'MYSQL_PWD="$MYSQL_PASSWORD" mysql --user="$MYSQL_USER" --default-character-set=utf8mb4 "$MYSQL_DATABASE" < ' + $containerFile
+    $command = 'MYSQL_PWD="$MYSQL_PASSWORD" mysql --protocol=TCP --host=127.0.0.1 --port=3306 --user="$MYSQL_USER" --default-character-set=utf8mb4 "$MYSQL_DATABASE" < ' + $containerFile
     Invoke-Compose exec -T mysql sh -c $command
     Invoke-Compose start backend frontend
     $healthy = $false

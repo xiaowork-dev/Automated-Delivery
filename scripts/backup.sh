@@ -12,7 +12,7 @@ BACKUP_FILE="$BACKUP_DIR/database-$(date -u +%Y%m%dT%H%M%SZ)-$$.sql.gz"
 TEMP_FILE="$BACKUP_FILE.partial"
 trap 'rm -f -- "$TEMP_FILE"' EXIT
 umask 077
-compose exec -T mysql sh -c 'MYSQL_PWD="$MYSQL_PASSWORD" exec mysqldump --user="$MYSQL_USER" --single-transaction --no-tablespaces --default-character-set=utf8mb4 "$MYSQL_DATABASE"' | gzip > "$TEMP_FILE"
+compose exec -T mysql sh -c 'MYSQL_PWD="$MYSQL_PASSWORD" exec mysqldump --protocol=TCP --host=127.0.0.1 --port=3306 --user="$MYSQL_USER" --single-transaction --no-tablespaces --default-character-set=utf8mb4 "$MYSQL_DATABASE"' | gzip > "$TEMP_FILE"
 gzip -t "$TEMP_FILE"
 mv -- "$TEMP_FILE" "$BACKUP_FILE"
 if command -v sha256sum >/dev/null; then
